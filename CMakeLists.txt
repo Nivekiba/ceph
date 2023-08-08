@@ -20,6 +20,9 @@ foreach(policy CMP0127 CMP0135)
   endif()
 endforeach()
 
+find_package(etcd-cpp-api REQUIRED)
+link_libraries(etcd-cpp-api)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules/")
 
 if(NOT CMAKE_BUILD_TYPE AND EXISTS "${CMAKE_SOURCE_DIR}/.git")

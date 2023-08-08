@@ -58,6 +58,9 @@
 #include "common/async/waiter.h"
 #include "error_code.h"
 
+// Kev
+#include "etcd/SyncClient.hpp"
+
 
 using std::list;
 using std::make_pair;
@@ -2955,6 +2958,7 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
 		   << " acting " << t->acting
 		   << " primary " << acting_primary << dendl;
     t->used_replica = false;
+                  
     if ((t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
                      CEPH_OSD_FLAG_LOCALIZE_READS)) &&
         !is_write && pi->is_replicated() && t->acting.size() > 1) {
@@ -2994,6 +2998,39 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
       t->osd = osd;
     } else {
       t->osd = acting_primary;
+      // kev here to modify what i want because the CEPH_OSD_FLAG_BALANCE_READS config can't be set
+
+      etcd::SyncClient etcd("http://127.0.0.1:2379");
+      /*etcd::Response response = etcd.get("foo");
+      ldout(cct, 2) << __func__ << " "
+        << " data = " << response.value().as_string() << dendl;
+      ldout(cct, 2) << (t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
+                      CEPH_OSD_FLAG_LOCALIZE_READS)) <<dendl;*/
+      if (is_read) {
+        int best = -1;
+        int best_latency = std::numeric_limits<int>::infinity();
+        for (unsigned i = 0; i < t->acting.size(); ++i) {
+          std::string key = "osd."+std::to_string(t->acting[i]);
+          ldout(cct, 20) << __func__ << " key = " << key << dendl;
+          etcd::Response rtmp = etcd.get(key);
+          if (rtmp.is_ok()){
+            int v = stoi(rtmp.value().as_string());
+            if (v < best_latency){
+              best_latency = v;
+              best = i;
+              ldout(cct, 20) << __func__ << v << best_latency << dendl;
+            }
+            ldout(cct, 20) << __func__ << " v = " << v << " best = " << best << dendl;
+          } else {
+            ldout(cct, 20) << __func__ << "err = " << rtmp.error_message() <<dendl;
+          }
+        }
+        ldout(cct, 20) << __func__ << " in the heap " << best << dendl;
+        if (best >= 0){
+          t->osd = t->acting[best];
+          t->used_replica = true;
+        }
+      }
     }
   }
   if (legacy_change || unpaused || force_resend) {
@@ -3185,6 +3222,23 @@ void Objecter::_finish_op(Op *op, int r)
   inflight_ops--;
 
   op->put();
+
+  // Kev
+  etcd::SyncClient etcd("http://127.0.0.1:2379");
+  std::string key = "osd."+std::to_string(op->target.osd);
+  etcd::Response response = etcd.get(key);
+
+  std::string last_num;
+  if(response.is_ok()){
+    // Exists and we get it
+    last_num = response.value().as_string();
+    etcd::Response r1 = etcd.put(
+                      key,
+                      std::to_string(stoi(last_num)-1) );
+    ldout(cct, 15) << __func__ << " etcd finish " << key << dendl;
+  } else {
+    // key not found
+  }
 }
 
 Objecter::MOSDOp *Objecter::_prepare_osd_op(Op *op)
@@ -3313,6 +3367,26 @@ void Objecter::_send_op(Op *op)
     m->trace.init("op msg", nullptr, &op->trace);
   }
   op->session->con->send_message(m);
+
+  // Kev
+  etcd::SyncClient etcd("http://127.0.0.1:2379");
+  std::string key = "osd."+std::to_string(op->target.osd);
+  etcd::Response response = etcd.get(key);
+
+  std::string last_num;
+  if(response.is_ok()){
+    // Exists and we get it
+    last_num = response.value().as_string();
+    etcd::Response r1 = etcd.put(
+                      key,
+                      std::to_string(stoi(last_num)+1) );
+    ldout(cct, 15) << __func__ << " etcd send" << key << dendl;
+  } else { // key not found
+    etcd::Response r1 = etcd.put(
+                      key,
+                      "1" );
+    ldout(cct, 15) << __func__ << " etcd send " << key << dendl;
+  }
 }
 
 int Objecter::calc_op_budget(const bc::small_vector_base<OSDOp>& ops)

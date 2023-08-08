@@ -279,6 +279,7 @@ int ReplicatedBackend::objects_readv_sync(
   uint32_t op_flags,
   bufferlist *bl)
 {
+  dout(10) << " readv_kev " << dendl;
   interval_set<uint64_t> im(std::move(m));
   auto r = store->readv(ch, ghobject_t(hoid), im, *bl, op_flags);
   if (r >= 0) {
