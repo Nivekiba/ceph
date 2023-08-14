@@ -3000,7 +3000,7 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
       t->osd = acting_primary;
       // kev here to modify what i want because the CEPH_OSD_FLAG_BALANCE_READS config can't be set
 
-      etcd::SyncClient etcd("http://127.0.0.1:2379");
+      etcd::SyncClient etcd("http://10.10.1.1:2379");
       /*etcd::Response response = etcd.get("foo");
       ldout(cct, 2) << __func__ << " "
         << " data = " << response.value().as_string() << dendl;
@@ -3224,7 +3224,7 @@ void Objecter::_finish_op(Op *op, int r)
   op->put();
 
   // Kev
-  etcd::SyncClient etcd("http://127.0.0.1:2379");
+  etcd::SyncClient etcd("http://10.10.1.1:2379");
   std::string key = "osd."+std::to_string(op->target.osd);
   etcd::Response response = etcd.get(key);
 
@@ -3369,7 +3369,7 @@ void Objecter::_send_op(Op *op)
   op->session->con->send_message(m);
 
   // Kev
-  etcd::SyncClient etcd("http://127.0.0.1:2379");
+  etcd::SyncClient etcd("http://10.10.1.1:2379");
   std::string key = "osd."+std::to_string(op->target.osd);
   etcd::Response response = etcd.get(key);
 
