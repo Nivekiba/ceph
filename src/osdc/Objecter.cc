@@ -2316,6 +2316,25 @@ void Objecter::_op_submit_with_budget(Op *op,
 void Objecter::_send_op_account(Op *op)
 {
   inflight_ops++;
+  // Kev
+  etcd::SyncClient etcd("http://10.10.1.1:2379");
+  std::string key = "osd."+std::to_string(op->target.osd);
+  etcd::Response response = etcd.get(key);
+
+  std::string last_num;
+  if(response.is_ok()){
+    // Exists and we get it
+    last_num = response.value().as_string();
+    etcd::Response r1 = etcd.put(
+                      key,
+                      std::to_string(stoi(last_num)+1) );
+    ldout(cct, 15) << __func__ << " etcd send" << key << dendl;
+  } else { // key not found
+    etcd::Response r1 = etcd.put(
+                      key,
+                      "1" );
+    ldout(cct, 15) << __func__ << " etcd send " << key << dendl;
+  }
 
   // add to gather set(s)
   if (op->has_completion()) {
@@ -3367,26 +3386,6 @@ void Objecter::_send_op(Op *op)
     m->trace.init("op msg", nullptr, &op->trace);
   }
   op->session->con->send_message(m);
-
-  // Kev
-  etcd::SyncClient etcd("http://10.10.1.1:2379");
-  std::string key = "osd."+std::to_string(op->target.osd);
-  etcd::Response response = etcd.get(key);
-
-  std::string last_num;
-  if(response.is_ok()){
-    // Exists and we get it
-    last_num = response.value().as_string();
-    etcd::Response r1 = etcd.put(
-                      key,
-                      std::to_string(stoi(last_num)+1) );
-    ldout(cct, 15) << __func__ << " etcd send" << key << dendl;
-  } else { // key not found
-    etcd::Response r1 = etcd.put(
-                      key,
-                      "1" );
-    ldout(cct, 15) << __func__ << " etcd send " << key << dendl;
-  }
 }
 
 int Objecter::calc_op_budget(const bc::small_vector_base<OSDOp>& ops)
