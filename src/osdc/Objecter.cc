@@ -1571,6 +1571,22 @@ void Objecter::_check_op_pool_dne(Op *op, std::unique_lock<std::shared_mutex> *s
 		     << " dne" << dendl;
       if (op->has_completion()) {
 	num_in_flight--;
+  // Kev
+  etcd::SyncClient etcd("http://10.10.1.1:2379");
+  std::string key = "osd."+std::to_string(op->target.osd);
+  etcd::Response response = etcd.get(key);
+
+  std::string last_num;
+  if(response.is_ok()){
+    // Exists and we get it
+    last_num = response.value().as_string();
+    etcd::Response r1 = etcd.put(
+                      key,
+                      std::to_string(stoi(last_num)-1) );
+    ldout(cct, 15) << __func__ << " etcd finish " << key << dendl;
+  } else {
+    // key not found
+  }
 	op->complete(osdc_errc::pool_dne, -ENOENT);
       }
 
@@ -1606,6 +1622,22 @@ void Objecter::_check_op_pool_eio(Op *op, std::unique_lock<std::shared_mutex> *s
 		 << " has eio" << dendl;
   if (op->has_completion()) {
     num_in_flight--;
+    // Kev
+    etcd::SyncClient etcd("http://10.10.1.1:2379");
+    std::string key = "osd."+std::to_string(op->target.osd);
+    etcd::Response response = etcd.get(key);
+
+    std::string last_num;
+    if(response.is_ok()){
+      // Exists and we get it
+      last_num = response.value().as_string();
+      etcd::Response r1 = etcd.put(
+                        key,
+                        std::to_string(stoi(last_num)-1) );
+      ldout(cct, 15) << __func__ << " etcd finish " << key << dendl;
+    } else {
+      // key not found
+    }
     op->complete(osdc_errc::pool_eio, -EIO);
   }
 
@@ -2316,29 +2348,29 @@ void Objecter::_op_submit_with_budget(Op *op,
 void Objecter::_send_op_account(Op *op)
 {
   inflight_ops++;
-  // Kev
-  etcd::SyncClient etcd("http://10.10.1.1:2379");
-  std::string key = "osd."+std::to_string(op->target.osd);
-  etcd::Response response = etcd.get(key);
-
-  std::string last_num;
-  if(response.is_ok()){
-    // Exists and we get it
-    last_num = response.value().as_string();
-    etcd::Response r1 = etcd.put(
-                      key,
-                      std::to_string(stoi(last_num)+1) );
-    ldout(cct, 15) << __func__ << " etcd send" << key << dendl;
-  } else { // key not found
-    etcd::Response r1 = etcd.put(
-                      key,
-                      "1" );
-    ldout(cct, 15) << __func__ << " etcd send " << key << dendl;
-  }
 
   // add to gather set(s)
   if (op->has_completion()) {
     num_in_flight++;
+    // Kev
+    etcd::SyncClient etcd("http://10.10.1.1:2379");
+    std::string key = "osd."+std::to_string(op->target.osd);
+    etcd::Response response = etcd.get(key);
+
+    std::string last_num;
+    if(response.is_ok()){
+      // Exists and we get it
+      last_num = response.value().as_string();
+      etcd::Response r1 = etcd.put(
+                        key,
+                        std::to_string(stoi(last_num)+1) );
+      ldout(cct, 15) << __func__ << " etcd send" << key << dendl;
+    } else { // key not found
+      etcd::Response r1 = etcd.put(
+                        key,
+                        "1" );
+      ldout(cct, 15) << __func__ << " etcd send " << key << dendl;
+    }
   } else {
     ldout(cct, 20) << " note: not requesting reply" << dendl;
   }
@@ -2532,6 +2564,22 @@ int Objecter::op_cancel(OSDSession *s, ceph_tid_t tid, int r)
   Op *op = p->second;
   if (op->has_completion()) {
     num_in_flight--;
+    // Kev
+    etcd::SyncClient etcd("http://10.10.1.1:2379");
+    std::string key = "osd."+std::to_string(op->target.osd);
+    etcd::Response response = etcd.get(key);
+
+    std::string last_num;
+    if(response.is_ok()){
+      // Exists and we get it
+      last_num = response.value().as_string();
+      etcd::Response r1 = etcd.put(
+                        key,
+                        std::to_string(stoi(last_num)-1) );
+      ldout(cct, 15) << __func__ << " etcd finish " << key << dendl;
+    } else {
+      // key not found
+    }
     op->complete(osdcode(r), r);
   }
   _op_cancel_map_check(op);
@@ -3211,6 +3259,22 @@ void Objecter::_cancel_linger_op(Op *op)
   if (op->has_completion()) {
     op->onfinish = nullptr;
     num_in_flight--;
+    // Kev
+    etcd::SyncClient etcd("http://10.10.1.1:2379");
+    std::string key = "osd."+std::to_string(op->target.osd);
+    etcd::Response response = etcd.get(key);
+
+    std::string last_num;
+    if(response.is_ok()){
+      // Exists and we get it
+      last_num = response.value().as_string();
+      etcd::Response r1 = etcd.put(
+                        key,
+                        std::to_string(stoi(last_num)-1) );
+      ldout(cct, 15) << __func__ << " etcd finish " << key << dendl;
+    } else {
+      // key not found
+    }
   }
 
   _finish_op(op, 0);
@@ -3241,23 +3305,6 @@ void Objecter::_finish_op(Op *op, int r)
   inflight_ops--;
 
   op->put();
-
-  // Kev
-  etcd::SyncClient etcd("http://10.10.1.1:2379");
-  std::string key = "osd."+std::to_string(op->target.osd);
-  etcd::Response response = etcd.get(key);
-
-  std::string last_num;
-  if(response.is_ok()){
-    // Exists and we get it
-    last_num = response.value().as_string();
-    etcd::Response r1 = etcd.put(
-                      key,
-                      std::to_string(stoi(last_num)-1) );
-    ldout(cct, 15) << __func__ << " etcd finish " << key << dendl;
-  } else {
-    // key not found
-  }
 }
 
 Objecter::MOSDOp *Objecter::_prepare_osd_op(Op *op)
@@ -3489,6 +3536,22 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
     ldout(cct, 7) << "retrying write after first reply: " << tid << dendl;
     if (op->has_completion()) {
       num_in_flight--;
+      // Kev
+      etcd::SyncClient etcd("http://10.10.1.1:2379");
+      std::string key = "osd."+std::to_string(op->target.osd);
+      etcd::Response response = etcd.get(key);
+
+      std::string last_num;
+      if(response.is_ok()){
+        // Exists and we get it
+        last_num = response.value().as_string();
+        etcd::Response r1 = etcd.put(
+                          key,
+                          std::to_string(stoi(last_num)-1) );
+        ldout(cct, 15) << __func__ << " etcd finish " << key << dendl;
+      } else {
+        // key not found
+      }
     }
     _session_op_remove(s, op);
     sl.unlock();
@@ -3521,8 +3584,25 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
 
   if (m->is_redirect_reply()) {
     ldout(cct, 5) << " got redirect reply; redirecting" << dendl;
-    if (op->has_completion())
+    if (op->has_completion()){
       num_in_flight--;
+      // Kev
+      etcd::SyncClient etcd("http://10.10.1.1:2379");
+      std::string key = "osd."+std::to_string(op->target.osd);
+      etcd::Response response = etcd.get(key);
+
+      std::string last_num;
+      if(response.is_ok()){
+        // Exists and we get it
+        last_num = response.value().as_string();
+        etcd::Response r1 = etcd.put(
+                          key,
+                          std::to_string(stoi(last_num)-1) );
+        ldout(cct, 15) << __func__ << " etcd finish " << key << dendl;
+      } else {
+        // key not found
+      }
+    }
     _session_op_remove(s, op);
     sl.unlock();
 
@@ -3541,8 +3621,25 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
 
   if (rc == -EAGAIN) {
     ldout(cct, 7) << " got -EAGAIN, resubmitting" << dendl;
-    if (op->has_completion())
+    if (op->has_completion()){
       num_in_flight--;
+      // Kev
+      etcd::SyncClient etcd("http://10.10.1.1:2379");
+      std::string key = "osd."+std::to_string(op->target.osd);
+      etcd::Response response = etcd.get(key);
+
+      std::string last_num;
+      if(response.is_ok()){
+        // Exists and we get it
+        last_num = response.value().as_string();
+        etcd::Response r1 = etcd.put(
+                          key,
+                          std::to_string(stoi(last_num)-1) );
+        ldout(cct, 15) << __func__ << " etcd finish " << key << dendl;
+      } else {
+        // key not found
+      }
+    }
     _session_op_remove(s, op);
     sl.unlock();
 
@@ -3637,6 +3734,22 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
 
   if (op->has_completion()) {
     num_in_flight--;
+    // Kev
+    etcd::SyncClient etcd("http://10.10.1.1:2379");
+    std::string key = "osd."+std::to_string(op->target.osd);
+    etcd::Response response = etcd.get(key);
+
+    std::string last_num;
+    if(response.is_ok()){
+      // Exists and we get it
+      last_num = response.value().as_string();
+      etcd::Response r1 = etcd.put(
+                        key,
+                        std::to_string(stoi(last_num)-1) );
+      ldout(cct, 15) << __func__ << " etcd finish " << key << dendl;
+    } else {
+      // key not found
+    }
     onfinish = std::move(op->onfinish);
     op->onfinish = nullptr;
   }
