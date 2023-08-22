@@ -2459,6 +2459,8 @@ public:
   void _send_op_account(Op *op);
   void _cancel_linger_op(Op *op);
   void _finish_op(Op *op, int r);
+  void inc_ops_etcd(Op *op);
+  void dec_ops_etcd(Op *op);
   static bool is_pg_changed(
     int oldprimary,
     const std::vector<int>& oldacting,

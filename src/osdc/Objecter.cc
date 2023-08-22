@@ -1571,23 +1571,7 @@ void Objecter::_check_op_pool_dne(Op *op, std::unique_lock<std::shared_mutex> *s
 		     << " dne" << dendl;
       if (op->has_completion()) {
 	num_in_flight--;
-  // Kev
-  etcd::SyncClient etcd("http://127.0.0.1:2379");
-  std::string key = "osd."+std::to_string(op->target.osd);
-  etcd::Response response = etcd.get(key);
-
-  std::string last_num;
-  if(response.is_ok()){
-    // Exists and we get it
-    last_num = response.value().as_string();
-    int num = std::max(0, stoi(last_num) - 1);
-    etcd::Response r1 = etcd.put(
-                      key,
-                      std::to_string(num) );
-    ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
-  } else {
-    // key not found
-  }
+  dec_ops_etcd(op);
 	op->complete(osdc_errc::pool_dne, -ENOENT);
       }
 
@@ -1623,23 +1607,7 @@ void Objecter::_check_op_pool_eio(Op *op, std::unique_lock<std::shared_mutex> *s
 		 << " has eio" << dendl;
   if (op->has_completion()) {
     num_in_flight--;
-    // Kev
-  etcd::SyncClient etcd("http://127.0.0.1:2379");
-  std::string key = "osd."+std::to_string(op->target.osd);
-  etcd::Response response = etcd.get(key);
-
-  std::string last_num;
-  if(response.is_ok()){
-    // Exists and we get it
-    last_num = response.value().as_string();
-    int num = std::max(0, stoi(last_num) - 1);
-    etcd::Response r1 = etcd.put(
-                      key,
-                      std::to_string(num) );
-    ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
-  } else {
-    // key not found
-  }
+    dec_ops_etcd(op);
     op->complete(osdc_errc::pool_eio, -EIO);
   }
 
@@ -2347,6 +2315,65 @@ void Objecter::_op_submit_with_budget(Op *op,
   _op_submit(op, sul, ptid);
 }
 
+int osd_cnt[12];
+
+void Objecter::inc_ops_etcd(Op *op){
+  // Kev
+  etcd::SyncClient etcd("http://127.0.0.1:2379");
+  std::string key = "osd."+std::to_string(op->target.osd);
+  etcd::Response response = etcd.get(key);
+
+  osd_cnt[op->target.osd] += 1;
+  ldout(cct, 15) << __func__ << " osd" << op->target.osd << dendl;
+  ldout(cct, 15) << osd_cnt << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << dendl;
+  return;
+
+  std::string last_num;
+  if(response.is_ok()){
+    // Exists and we get it
+    last_num = response.value().as_string();
+    etcd::Response r1 = etcd.put(
+                      key,
+                      std::to_string(stoi(last_num)+1) );
+    ldout(cct, 15) << __func__ << " etcd send" << key << " " << num_in_flight << dendl;
+  } else { // key not found
+    etcd::Response r1 = etcd.put(
+                      key,
+                      "1" );
+    ldout(cct, 15) << __func__ << " etcd send " << key << " " << num_in_flight << dendl;
+  }
+}
+
+void Objecter::dec_ops_etcd(Op *op){
+  // Kev
+  etcd::SyncClient etcd("http://127.0.0.1:2379");
+  std::string key = "osd."+std::to_string(op->target.osd);
+  etcd::Response response = etcd.get(key);
+
+  osd_cnt[op->target.osd] -= 1;
+  ldout(cct, 15) << __func__ << " osd" << op->target.osd << dendl;
+  ldout(cct, 15) << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << dendl;
+  return;
+  
+  std::string last_num;
+  if(response.is_ok()){
+    // Exists and we get it
+    last_num = response.value().as_string();
+    int num = std::max(0, stoi(last_num) - 1);
+    num = stoi(last_num) - 1;
+    etcd::Response r1 = etcd.put(
+                      key,
+                      std::to_string(num) );
+    ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
+  } else {
+    // key not found
+    etcd::Response r1 = etcd.put(
+                      key,
+                      "-1" );
+    ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
+  }
+}
+
 void Objecter::_send_op_account(Op *op)
 {
   inflight_ops++;
@@ -2354,25 +2381,7 @@ void Objecter::_send_op_account(Op *op)
   // add to gather set(s)
   if (op->has_completion()) {
     num_in_flight++;
-    // Kev
-    etcd::SyncClient etcd("http://127.0.0.1:2379");
-    std::string key = "osd."+std::to_string(op->target.osd);
-    etcd::Response response = etcd.get(key);
-
-    std::string last_num;
-    if(response.is_ok()){
-      // Exists and we get it
-      last_num = response.value().as_string();
-      etcd::Response r1 = etcd.put(
-                        key,
-                        std::to_string(stoi(last_num)+1) );
-      ldout(cct, 15) << __func__ << " etcd send" << key << dendl;
-    } else { // key not found
-      etcd::Response r1 = etcd.put(
-                        key,
-                        "1" );
-      ldout(cct, 15) << __func__ << " etcd send " << key << dendl;
-    }
+    inc_ops_etcd(op);
   } else {
     ldout(cct, 20) << " note: not requesting reply" << dendl;
   }
@@ -2566,23 +2575,7 @@ int Objecter::op_cancel(OSDSession *s, ceph_tid_t tid, int r)
   Op *op = p->second;
   if (op->has_completion()) {
     num_in_flight--;
-    // Kev
-    etcd::SyncClient etcd("http://127.0.0.1:2379");
-    std::string key = "osd."+std::to_string(op->target.osd);
-    etcd::Response response = etcd.get(key);
-
-    std::string last_num;
-    if(response.is_ok()){
-      // Exists and we get it
-      last_num = response.value().as_string();
-      int num = std::max(0, stoi(last_num) - 1);
-      etcd::Response r1 = etcd.put(
-                        key,
-                        std::to_string(num) );
-      ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
-    } else {
-      // key not found
-    }
+    dec_ops_etcd(op);
     op->complete(osdcode(r), r);
   }
   _op_cancel_map_check(op);
@@ -3080,20 +3073,27 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
         int best = -1;
         int best_latency = std::numeric_limits<int>::infinity();
         for (unsigned i = 0; i < t->acting.size(); ++i) {
-          std::string key = "osd."+std::to_string(t->acting[i]);
-          ldout(cct, 20) << __func__ << " key = " << key << dendl;
-          etcd::Response rtmp = etcd.get(key);
-          if (rtmp.is_ok()){
-            int v = stoi(rtmp.value().as_string());
-            if (v < best_latency){
-              best_latency = v;
-              best = i;
-              ldout(cct, 20) << __func__ << v << best_latency << dendl;
-            }
-            ldout(cct, 20) << __func__ << " v = " << v << " best = " << best << dendl;
-          } else {
-            ldout(cct, 20) << __func__ << "err = " << rtmp.error_message() <<dendl;
+          // std::string key = "osd."+std::to_string(t->acting[i]);
+          // ldout(cct, 20) << __func__ << " key = " << key << dendl;
+          // etcd::Response rtmp = etcd.get(key);
+          // if (rtmp.is_ok()){
+          //   int v = stoi(rtmp.value().as_string());
+          //   if (v < best_latency){
+          //     best_latency = v;
+          //     best = i;
+          //     ldout(cct, 20) << __func__ << v << best_latency << dendl;
+          //   }
+          //   ldout(cct, 20) << __func__ << " v = " << v << " best = " << best << dendl;
+          // } else {
+          //   ldout(cct, 20) << __func__ << "err = " << rtmp.error_message() <<dendl;
+          // }
+          int v = osd_cnt[t->acting[i]];
+          if (v < best_latency){
+            best_latency = v;
+            best = i;
+            ldout(cct, 15) << __func__ << v << best_latency << dendl;
           }
+          ldout(cct, 15) << __func__ << " v = " << v << " best = " << best << dendl;
         }
         ldout(cct, 20) << __func__ << " in the heap " << best << dendl;
         if (best >= 0){
@@ -3262,23 +3262,7 @@ void Objecter::_cancel_linger_op(Op *op)
   if (op->has_completion()) {
     op->onfinish = nullptr;
     num_in_flight--;
-    // Kev
-    etcd::SyncClient etcd("http://127.0.0.1:2379");
-    std::string key = "osd."+std::to_string(op->target.osd);
-    etcd::Response response = etcd.get(key);
-
-    std::string last_num;
-    if(response.is_ok()){
-      // Exists and we get it
-      last_num = response.value().as_string();
-      int num = std::max(0, stoi(last_num) - 1);
-      etcd::Response r1 = etcd.put(
-                        key,
-                        std::to_string(num) );
-      ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
-    } else {
-      // key not found
-    }
+    dec_ops_etcd(op);
   }
 
   _finish_op(op, 0);
@@ -3540,23 +3524,7 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
     ldout(cct, 7) << "retrying write after first reply: " << tid << dendl;
     if (op->has_completion()) {
       num_in_flight--;
-      // Kev
-      etcd::SyncClient etcd("http://127.0.0.1:2379");
-      std::string key = "osd."+std::to_string(op->target.osd);
-      etcd::Response response = etcd.get(key);
-
-      std::string last_num;
-      if(response.is_ok()){
-        // Exists and we get it
-        last_num = response.value().as_string();
-        int num = std::max(0, stoi(last_num) - 1);
-        etcd::Response r1 = etcd.put(
-                          key,
-                          std::to_string(num) );
-        ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
-      } else {
-        // key not found
-      }
+      dec_ops_etcd(op);
     }
     _session_op_remove(s, op);
     sl.unlock();
@@ -3591,23 +3559,7 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
     ldout(cct, 5) << " got redirect reply; redirecting" << dendl;
     if (op->has_completion()){
       num_in_flight--;
-      // Kev
-      etcd::SyncClient etcd("http://127.0.0.1:2379");
-      std::string key = "osd."+std::to_string(op->target.osd);
-      etcd::Response response = etcd.get(key);
-
-      std::string last_num;
-      if(response.is_ok()){
-        // Exists and we get it
-        last_num = response.value().as_string();
-        int num = std::max(0, stoi(last_num) - 1);
-        etcd::Response r1 = etcd.put(
-                          key,
-                          std::to_string(num) );
-        ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
-      } else {
-        // key not found
-      }
+      dec_ops_etcd(op);
     }
     _session_op_remove(s, op);
     sl.unlock();
@@ -3629,23 +3581,7 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
     ldout(cct, 7) << " got -EAGAIN, resubmitting" << dendl;
     if (op->has_completion()){
       num_in_flight--;
-      // Kev
-      etcd::SyncClient etcd("http://127.0.0.1:2379");
-      std::string key = "osd."+std::to_string(op->target.osd);
-      etcd::Response response = etcd.get(key);
-
-      std::string last_num;
-      if(response.is_ok()){
-        // Exists and we get it
-        last_num = response.value().as_string();
-        int num = std::max(0, stoi(last_num) - 1);
-        etcd::Response r1 = etcd.put(
-                          key,
-                          std::to_string(num) );
-        ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
-      } else {
-        // key not found
-      }
+      dec_ops_etcd(op);
     }
     _session_op_remove(s, op);
     sl.unlock();
@@ -3741,23 +3677,7 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
 
   if (op->has_completion()) {
     num_in_flight--;
-    // Kev
-    etcd::SyncClient etcd("http://127.0.0.1:2379");
-    std::string key = "osd."+std::to_string(op->target.osd);
-    etcd::Response response = etcd.get(key);
-
-    std::string last_num;
-    if(response.is_ok()){
-      // Exists and we get it
-      last_num = response.value().as_string();
-      int num = std::max(0, stoi(last_num) - 1);
-      etcd::Response r1 = etcd.put(
-                        key,
-                        std::to_string(num) );
-      ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
-    } else {
-      // key not found
-    }
+    dec_ops_etcd(op);
     onfinish = std::move(op->onfinish);
     op->onfinish = nullptr;
   }
