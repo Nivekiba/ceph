@@ -2360,7 +2360,6 @@ void Objecter::dec_ops_etcd(Op *op){
     // Exists and we get it
     last_num = response.value().as_string();
     int num = std::max(0, stoi(last_num) - 1);
-    num = stoi(last_num) - 1;
     etcd::Response r1 = etcd.put(
                       key,
                       std::to_string(num) );
@@ -2369,7 +2368,7 @@ void Objecter::dec_ops_etcd(Op *op){
     // key not found
     etcd::Response r1 = etcd.put(
                       key,
-                      "-1" );
+                      "0" );
     ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
   }
 }
@@ -3063,8 +3062,8 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
       t->osd = acting_primary;
       // kev here to modify what i want because the CEPH_OSD_FLAG_BALANCE_READS config can't be set
 
-      etcd::SyncClient etcd("http://127.0.0.1:2379");
-      /*etcd::Response response = etcd.get("foo");
+      /*etcd::SyncClient etcd("http://127.0.0.1:2379");
+      etcd::Response response = etcd.get("foo");
       ldout(cct, 2) << __func__ << " "
         << " data = " << response.value().as_string() << dendl;
       ldout(cct, 2) << (t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
@@ -3088,7 +3087,7 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
           //   ldout(cct, 20) << __func__ << "err = " << rtmp.error_message() <<dendl;
           // }
           int v = osd_cnt[t->acting[i]];
-          if (v < best_latency){
+          if (v < best_latency && v >= 0 && best_latency >= 0){
             best_latency = v;
             best = i;
             ldout(cct, 15) << __func__ << v << best_latency << dendl;
