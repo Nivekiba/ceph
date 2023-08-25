@@ -2318,6 +2318,11 @@ void Objecter::_op_submit_with_budget(Op *op,
 int osd_cnt[12];
 
 void Objecter::inc_ops_etcd(Op *op){
+  if ((op->target.flags & (CEPH_OSD_FLAG_READ | CEPH_OSD_FLAG_WRITE)) ==
+      (CEPH_OSD_FLAG_READ|CEPH_OSD_FLAG_WRITE)) {
+  } else {
+    return;
+  }
   // Kev
   etcd::SyncClient etcd("http://127.0.0.1:2379");
   std::string key = "osd."+std::to_string(op->target.osd);
@@ -2345,6 +2350,11 @@ void Objecter::inc_ops_etcd(Op *op){
 }
 
 void Objecter::dec_ops_etcd(Op *op){
+  if ((op->target.flags & (CEPH_OSD_FLAG_READ | CEPH_OSD_FLAG_WRITE)) ==
+      (CEPH_OSD_FLAG_READ|CEPH_OSD_FLAG_WRITE)) {
+  } else {
+    return;
+  }
   // Kev
   etcd::SyncClient etcd("http://127.0.0.1:2379");
   std::string key = "osd."+std::to_string(op->target.osd);
