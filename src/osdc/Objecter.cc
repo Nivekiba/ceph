@@ -2330,7 +2330,7 @@ void Objecter::inc_ops_etcd(Op *op){
 
   osd_cnt[op->target.osd] += 1;
   ldout(cct, 15) << __func__ << " osd" << op->target.osd << dendl;
-  ldout(cct, 15) << osd_cnt << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << dendl;
+  ldout(cct, 15) << osd_cnt << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << dendl;
   return;
 
   std::string last_num;
@@ -2362,7 +2362,7 @@ void Objecter::dec_ops_etcd(Op *op){
 
   osd_cnt[op->target.osd] -= 1;
   ldout(cct, 15) << __func__ << " osd" << op->target.osd << dendl;
-  ldout(cct, 15) << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << dendl;
+  ldout(cct, 15) << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << dendl;
   return;
   
   std::string last_num;
