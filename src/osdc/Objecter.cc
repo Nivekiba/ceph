@@ -2316,22 +2316,27 @@ void Objecter::_op_submit_with_budget(Op *op,
 }
 
 int osd_cnt[12];
+std::mutex mtx;  
 
 void Objecter::inc_ops_etcd(Op *op){
-  if ((op->target.flags & (CEPH_OSD_FLAG_READ | CEPH_OSD_FLAG_WRITE)) ==
-      (CEPH_OSD_FLAG_READ|CEPH_OSD_FLAG_WRITE)) {
+  bool is_read = op->target.flags & CEPH_OSD_FLAG_READ;
+  bool is_write = op->target.flags & CEPH_OSD_FLAG_WRITE;
+  if (is_read || is_write) {
   } else {
     return;
   }
   // Kev
+  mtx.lock();
+  osd_cnt[op->target.osd] += 1;
+  mtx.unlock();
+
+  ldout(cct, 15) << __func__ << " osd" << op->target.osd << dendl;
+  ldout(cct, 15) << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << dendl;
+  return;
+
   etcd::SyncClient etcd("http://127.0.0.1:2379");
   std::string key = "osd."+std::to_string(op->target.osd);
   etcd::Response response = etcd.get(key);
-
-  osd_cnt[op->target.osd] += 1;
-  ldout(cct, 15) << __func__ << " osd" << op->target.osd << dendl;
-  ldout(cct, 15) << osd_cnt << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << dendl;
-  return;
 
   std::string last_num;
   if(response.is_ok()){
@@ -2350,20 +2355,25 @@ void Objecter::inc_ops_etcd(Op *op){
 }
 
 void Objecter::dec_ops_etcd(Op *op){
-  if ((op->target.flags & (CEPH_OSD_FLAG_READ | CEPH_OSD_FLAG_WRITE)) ==
-      (CEPH_OSD_FLAG_READ|CEPH_OSD_FLAG_WRITE)) {
+  bool is_read = op->target.flags & CEPH_OSD_FLAG_READ;
+  bool is_write = op->target.flags & CEPH_OSD_FLAG_WRITE;
+  if (is_read || is_write) {
   } else {
     return;
   }
   // Kev
+  mtx.lock();
+  osd_cnt[op->target.osd] -= 1;
+//   osd_cnt[op->target.osd] = std::max(osd_cnt[op->target.osd], 0);
+  mtx.unlock();
+
+  ldout(cct, 15) << __func__ << " osd" << op->target.osd << dendl;
+  ldout(cct, 15) << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << dendl;
+  return;
+
   etcd::SyncClient etcd("http://127.0.0.1:2379");
   std::string key = "osd."+std::to_string(op->target.osd);
   etcd::Response response = etcd.get(key);
-
-  osd_cnt[op->target.osd] -= 1;
-  ldout(cct, 15) << __func__ << " osd" << op->target.osd << dendl;
-  ldout(cct, 15) << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << dendl;
-  return;
   
   std::string last_num;
   if(response.is_ok()){
@@ -3080,7 +3090,7 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
                       CEPH_OSD_FLAG_LOCALIZE_READS)) <<dendl;*/
       if (is_read) {
         int best = -1;
-        int best_latency = std::numeric_limits<int>::infinity();
+        int best_latency = 2100000000;
         for (unsigned i = 0; i < t->acting.size(); ++i) {
           // std::string key = "osd."+std::to_string(t->acting[i]);
           // ldout(cct, 20) << __func__ << " key = " << key << dendl;
@@ -3097,12 +3107,13 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
           //   ldout(cct, 20) << __func__ << "err = " << rtmp.error_message() <<dendl;
           // }
           int v = osd_cnt[t->acting[i]];
+          ldout(cct, 15) << __func__ << " v = " << v << " best = " << best  << dendl;
+          ldout(cct, 15) << __func__ << " best_lat = " << best_latency << dendl;
           if (v < best_latency && v >= 0 && best_latency >= 0){
             best_latency = v;
             best = i;
             ldout(cct, 15) << __func__ << v << best_latency << dendl;
           }
-          ldout(cct, 15) << __func__ << " v = " << v << " best = " << best << dendl;
         }
         ldout(cct, 20) << __func__ << " in the heap " << best << dendl;
         if (best >= 0){
