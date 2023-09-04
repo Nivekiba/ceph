@@ -2316,6 +2316,8 @@ void Objecter::_op_submit_with_budget(Op *op,
 }
 
 int osd_cnt[12];
+int osd_tid_in[200] = {-1};
+int osd_tid_out[200] = {-1};
 std::mutex mtx;  
 
 void Objecter::inc_ops_etcd(Op *op){
@@ -2328,9 +2330,13 @@ void Objecter::inc_ops_etcd(Op *op){
   // Kev
   mtx.lock();
   osd_cnt[op->target.osd] += 1;
+  osd_tid_in[op->tid] = op->target.osd;
   mtx.unlock();
 
+  std::string pol = cct->_conf.get_val<std::string>("rbd_read_from_replica_policy");
+  ldout(cct, 15) << "policy " << pol << dendl;
   ldout(cct, 15) << __func__ << " osd" << op->target.osd << dendl;
+  ldout(cct, 15) << op->tid << "->" << osd_tid_in[op->tid] << " " << osd_tid_out[op->tid] << dendl;
   ldout(cct, 15) << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << dendl;
   return;
 
@@ -2355,6 +2361,8 @@ void Objecter::inc_ops_etcd(Op *op){
 }
 
 void Objecter::dec_ops_etcd(Op *op){
+  if(!op->tid)
+    return;
   bool is_read = op->target.flags & CEPH_OSD_FLAG_READ;
   bool is_write = op->target.flags & CEPH_OSD_FLAG_WRITE;
   if (is_read || is_write) {
@@ -2364,10 +2372,12 @@ void Objecter::dec_ops_etcd(Op *op){
   // Kev
   mtx.lock();
   osd_cnt[op->target.osd] -= 1;
+  osd_tid_out[op->tid] = op->target.osd;
 //   osd_cnt[op->target.osd] = std::max(osd_cnt[op->target.osd], 0);
   mtx.unlock();
 
   ldout(cct, 15) << __func__ << " osd" << op->target.osd << dendl;
+  ldout(cct, 15) << op->tid << "->" << osd_tid_in[op->tid] << " " << osd_tid_out[op->tid] << dendl;
   ldout(cct, 15) << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << dendl;
   return;
 
@@ -2858,11 +2868,20 @@ void Objecter::_prune_snapc(
   }
 }
 
+std::string read_policy = "";
+
 int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
 {
   // rwlock is locked
   bool is_read = t->flags & CEPH_OSD_FLAG_READ;
   bool is_write = t->flags & CEPH_OSD_FLAG_WRITE;
+
+  if(read_policy.length() == 0)
+    read_policy = cct->_conf.get_val<std::string>("rbd_read_from_replica_policy");
+  bool is_balanced = !read_policy.compare("balance");
+  bool is_localized = !read_policy.compare("localize");
+  ldout(cct, 20) << "pol " << read_policy << " " << is_balanced << " " << is_localized << dendl;
+  
   t->epoch = osdmap->get_epoch();
   ldout(cct,20) << __func__ << " epoch " << t->epoch
 		<< " base " << t->base_oid << " " << t->base_oloc
@@ -3041,18 +3060,62 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
 		   << " primary " << acting_primary << dendl;
     t->used_replica = false;
                   
-    if ((t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
-                     CEPH_OSD_FLAG_LOCALIZE_READS)) &&
+    // if ((t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
+    //                  CEPH_OSD_FLAG_LOCALIZE_READS)) &&
+    if ((is_balanced || is_localized) && !(t->flags & 0x10000000) &&
         !is_write && pi->is_replicated() && t->acting.size() > 1) {
       int osd;
       ceph_assert(is_read && t->acting[0] == acting_primary);
-      if (t->flags & CEPH_OSD_FLAG_BALANCE_READS) {
+      // if (t->flags & CEPH_OSD_FLAG_BALANCE_READS) {
+      if (is_balanced) {
 	int p = rand() % t->acting.size();
 	if (p)
 	  t->used_replica = true;
 	osd = t->acting[p];
 	ldout(cct, 10) << " chose random osd." << osd << " of " << t->acting
 		       << dendl;
+
+        // kev here to modify what i want because the CEPH_OSD_FLAG_BALANCE_READS config can't be set
+
+        /*etcd::SyncClient etcd("http://127.0.0.1:2379");
+        etcd::Response response = etcd.get("foo");
+        ldout(cct, 2) << __func__ << " "
+          << " data = " << response.value().as_string() << dendl;
+        ldout(cct, 2) << (t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
+                        CEPH_OSD_FLAG_LOCALIZE_READS)) <<dendl;*/
+        if (is_read) {
+          int best = -1;
+          int best_latency = 2100000000;
+          for (unsigned i = 0; i < t->acting.size(); ++i) {
+            // std::string key = "osd."+std::to_string(t->acting[i]);
+            // ldout(cct, 20) << __func__ << " key = " << key << dendl;
+            // etcd::Response rtmp = etcd.get(key);
+            // if (rtmp.is_ok()){
+            //   int v = stoi(rtmp.value().as_string());
+            //   if (v < best_latency){
+            //     best_latency = v;
+            //     best = i;
+            //     ldout(cct, 20) << __func__ << v << best_latency << dendl;
+            //   }
+            //   ldout(cct, 20) << __func__ << " v = " << v << " best = " << best << dendl;
+            // } else {
+            //   ldout(cct, 20) << __func__ << "err = " << rtmp.error_message() <<dendl;
+            // }
+            int v = osd_cnt[t->acting[i]];
+            ldout(cct, 15) << __func__ << " v = " << v << " best = " << best  << dendl;
+            ldout(cct, 15) << __func__ << " best_lat = " << best_latency << dendl;
+            if (v < best_latency && v >= 0 && best_latency >= 0){
+              best_latency = v;
+              best = i;
+              ldout(cct, 15) << __func__ << v << best_latency << dendl;
+            }
+          }
+          ldout(cct, 20) << __func__ << " in the heap " << best << dendl;
+          if (best >= 0){
+            t->osd = t->acting[best];
+            t->used_replica = true;
+          }
+        }
       } else {
 	// look for a local replica.  prefer the primary if the
 	// distance is the same.
@@ -3080,47 +3143,6 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
       t->osd = osd;
     } else {
       t->osd = acting_primary;
-      // kev here to modify what i want because the CEPH_OSD_FLAG_BALANCE_READS config can't be set
-
-      /*etcd::SyncClient etcd("http://127.0.0.1:2379");
-      etcd::Response response = etcd.get("foo");
-      ldout(cct, 2) << __func__ << " "
-        << " data = " << response.value().as_string() << dendl;
-      ldout(cct, 2) << (t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
-                      CEPH_OSD_FLAG_LOCALIZE_READS)) <<dendl;*/
-      if (is_read) {
-        int best = -1;
-        int best_latency = 2100000000;
-        for (unsigned i = 0; i < t->acting.size(); ++i) {
-          // std::string key = "osd."+std::to_string(t->acting[i]);
-          // ldout(cct, 20) << __func__ << " key = " << key << dendl;
-          // etcd::Response rtmp = etcd.get(key);
-          // if (rtmp.is_ok()){
-          //   int v = stoi(rtmp.value().as_string());
-          //   if (v < best_latency){
-          //     best_latency = v;
-          //     best = i;
-          //     ldout(cct, 20) << __func__ << v << best_latency << dendl;
-          //   }
-          //   ldout(cct, 20) << __func__ << " v = " << v << " best = " << best << dendl;
-          // } else {
-          //   ldout(cct, 20) << __func__ << "err = " << rtmp.error_message() <<dendl;
-          // }
-          int v = osd_cnt[t->acting[i]];
-          ldout(cct, 15) << __func__ << " v = " << v << " best = " << best  << dendl;
-          ldout(cct, 15) << __func__ << " best_lat = " << best_latency << dendl;
-          if (v < best_latency && v >= 0 && best_latency >= 0){
-            best_latency = v;
-            best = i;
-            ldout(cct, 15) << __func__ << v << best_latency << dendl;
-          }
-        }
-        ldout(cct, 20) << __func__ << " in the heap " << best << dendl;
-        if (best >= 0){
-          t->osd = t->acting[best];
-          t->used_replica = true;
-        }
-      }
     }
   }
   if (legacy_change || unpaused || force_resend) {
@@ -3608,7 +3630,7 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
 
     op->tid = 0;
     op->target.flags &= ~(CEPH_OSD_FLAG_BALANCE_READS |
-			  CEPH_OSD_FLAG_LOCALIZE_READS);
+			  CEPH_OSD_FLAG_LOCALIZE_READS | 0x10000000);
     op->target.pgid = pg_t();
     _op_submit(op, sul, NULL);
     m->put();
