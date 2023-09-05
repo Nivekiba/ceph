@@ -2042,7 +2042,7 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   }
 
   if ( ((m->get_flags() & (CEPH_OSD_FLAG_BALANCE_READS |
-			 CEPH_OSD_FLAG_LOCALIZE_READS)) || true) &&
+			 CEPH_OSD_FLAG_LOCALIZE_READS)) || true ) &&
       op->may_read() &&
       !(op->may_write() || op->may_cache())) {
     // balanced reads; any replica will do

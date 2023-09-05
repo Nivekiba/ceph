@@ -2880,6 +2880,8 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
     read_policy = cct->_conf.get_val<std::string>("rbd_read_from_replica_policy");
   bool is_balanced = !read_policy.compare("balance");
   bool is_localized = !read_policy.compare("localize");
+  is_balanced = false;
+  
   ldout(cct, 20) << "pol " << read_policy << " " << is_balanced << " " << is_localized << dendl;
   
   t->epoch = osdmap->get_epoch();
@@ -3062,7 +3064,7 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
                   
     // if ((t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
     //                  CEPH_OSD_FLAG_LOCALIZE_READS)) &&
-    if ((is_balanced || is_localized) && !(t->flags & 0x10000000) &&
+    if ((is_balanced || is_localized) && //!(t->flags & 0x10000000) &&
         !is_write && pi->is_replicated() && t->acting.size() > 1) {
       int osd;
       ceph_assert(is_read && t->acting[0] == acting_primary);
@@ -3074,8 +3076,39 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
 	osd = t->acting[p];
 	ldout(cct, 10) << " chose random osd." << osd << " of " << t->acting
 		       << dendl;
+      } else {
+	// look for a local replica.  prefer the primary if the
+	// distance is the same.
+	int best = -1;
+	int best_locality = 0;
+	for (unsigned i = 0; i < t->acting.size(); ++i) {
+	  int locality = osdmap->crush->get_common_ancestor_distance(
+		 cct, t->acting[i], crush_location);
+	  ldout(cct, 20) << __func__ << " localize: rank " << i
+			 << " osd." << t->acting[i]
+			 << " locality " << locality << dendl;
+	  if (i == 0 ||
+	      (locality >= 0 && best_locality >= 0 &&
+	       locality < best_locality) ||
+	      (best_locality < 0 && locality >= 0)) {
+	    best = i;
+	    best_locality = locality;
+	    if (i)
+	      t->used_replica = true;
+	  }
+	}
+	ceph_assert(best >= 0);
+	osd = t->acting[best];
+      }
+      t->osd = osd;
+    } else {
+      if(t->flags & 0x10000000)
+        ldout(cct, 15) << __func__ << " the flags after the death " << dendl;
+      ldout(cct, 15) << __func__ << " " << t->flags & 0x10000000 << dendl;
 
-        // kev here to modify what i want because the CEPH_OSD_FLAG_BALANCE_READS config can't be set
+      t->osd = acting_primary;
+
+      // kev here to modify what i want because the CEPH_OSD_FLAG_BALANCE_READS config can't be set
 
         /*etcd::SyncClient etcd("http://127.0.0.1:2379");
         etcd::Response response = etcd.get("foo");
@@ -3085,7 +3118,7 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
                         CEPH_OSD_FLAG_LOCALIZE_READS)) <<dendl;*/
         if (is_read) {
           int best = -1;
-          int best_latency = 2100000000;
+          int best_latency = 210000000;
           for (unsigned i = 0; i < t->acting.size(); ++i) {
             // std::string key = "osd."+std::to_string(t->acting[i]);
             // ldout(cct, 20) << __func__ << " key = " << key << dendl;
@@ -3113,36 +3146,10 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
           ldout(cct, 20) << __func__ << " in the heap " << best << dendl;
           if (best >= 0){
             t->osd = t->acting[best];
+            //osd = t->acting[best];
             t->used_replica = true;
           }
         }
-      } else {
-	// look for a local replica.  prefer the primary if the
-	// distance is the same.
-	int best = -1;
-	int best_locality = 0;
-	for (unsigned i = 0; i < t->acting.size(); ++i) {
-	  int locality = osdmap->crush->get_common_ancestor_distance(
-		 cct, t->acting[i], crush_location);
-	  ldout(cct, 20) << __func__ << " localize: rank " << i
-			 << " osd." << t->acting[i]
-			 << " locality " << locality << dendl;
-	  if (i == 0 ||
-	      (locality >= 0 && best_locality >= 0 &&
-	       locality < best_locality) ||
-	      (best_locality < 0 && locality >= 0)) {
-	    best = i;
-	    best_locality = locality;
-	    if (i)
-	      t->used_replica = true;
-	  }
-	}
-	ceph_assert(best >= 0);
-	osd = t->acting[best];
-      }
-      t->osd = osd;
-    } else {
-      t->osd = acting_primary;
     }
   }
   if (legacy_change || unpaused || force_resend) {
