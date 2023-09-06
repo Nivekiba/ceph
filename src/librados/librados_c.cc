@@ -2576,12 +2576,12 @@ extern "C" int LIBRADOS_C_API_DEFAULT_F(rados_aio_create_completion2)(
   rados_callback_t cb_complete,
   rados_completion_t *pc)
 {
-  tracepoint(librados, rados_aio_create_completion2_enter, cb_arg, cb_complete);
+  //tracepoint(librados, rados_aio_create_completion2_enter, cb_arg, cb_complete);
   librados::AioCompletionImpl *c = new librados::AioCompletionImpl;
   if (cb_complete)
     c->set_complete_callback(cb_arg, cb_complete);
   *pc = c;
-  tracepoint(librados, rados_aio_create_completion2_exit, 0, *pc);
+  //tracepoint(librados, rados_aio_create_completion2_exit, 0, *pc);
   return 0;
 }
 LIBRADOS_C_API_BASE_DEFAULT(rados_aio_create_completion2);

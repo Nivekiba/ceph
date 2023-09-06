@@ -2316,9 +2316,9 @@ void Objecter::_op_submit_with_budget(Op *op,
 }
 
 int osd_cnt[12];
-int osd_tid_in[200] = {-1};
-int osd_tid_out[200] = {-1};
-std::mutex mtx;  
+int osd_tid_in[2000000000] = {-1};
+int osd_tid_out[2000000000] = {-1};
+std::recursive_mutex mtx;  
 
 void Objecter::inc_ops_etcd(Op *op){
   bool is_read = op->target.flags & CEPH_OSD_FLAG_READ;
@@ -2876,10 +2876,13 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
   bool is_read = t->flags & CEPH_OSD_FLAG_READ;
   bool is_write = t->flags & CEPH_OSD_FLAG_WRITE;
 
+  mtx.lock();
   if(read_policy.length() == 0)
     read_policy = cct->_conf.get_val<std::string>("rbd_read_from_replica_policy");
-  bool is_balanced = !read_policy.compare("balance");
-  bool is_localized = !read_policy.compare("localize");
+  mtx.unlock();
+
+  bool is_balanced = !(read_policy.compare("balance"));
+  bool is_localized = !(read_policy.compare("localize"));
   is_balanced = false;
   
   ldout(cct, 20) << "pol " << read_policy << " " << is_balanced << " " << is_localized << dendl;
@@ -3064,7 +3067,7 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
                   
     // if ((t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
     //                  CEPH_OSD_FLAG_LOCALIZE_READS)) &&
-    if ((is_balanced || is_localized) && //!(t->flags & 0x10000000) &&
+    if ((is_balanced || is_localized) && !(t->flags & 0x10000000) &&
         !is_write && pi->is_replicated() && t->acting.size() > 1) {
       int osd;
       ceph_assert(is_read && t->acting[0] == acting_primary);
@@ -3102,9 +3105,10 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
       }
       t->osd = osd;
     } else {
-      if(t->flags & 0x10000000)
+      auto y = t->flags & 0x10000000;
+      if(y)
         ldout(cct, 15) << __func__ << " the flags after the death " << dendl;
-      ldout(cct, 15) << __func__ << " " << t->flags & 0x10000000 << dendl;
+      ldout(cct, 15) << __func__ << " flag k = " << y << dendl;
 
       t->osd = acting_primary;
 
@@ -3149,6 +3153,8 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
             //osd = t->acting[best];
             t->used_replica = true;
           }
+          if(y)
+            t->osd = acting_primary;
         }
     }
   }
@@ -3637,7 +3643,8 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
 
     op->tid = 0;
     op->target.flags &= ~(CEPH_OSD_FLAG_BALANCE_READS |
-			  CEPH_OSD_FLAG_LOCALIZE_READS | 0x10000000);
+			  CEPH_OSD_FLAG_LOCALIZE_READS);
+    op->target.flags |= 0x10000000;
     op->target.pgid = pg_t();
     _op_submit(op, sul, NULL);
     m->put();
