@@ -2316,9 +2316,9 @@ void Objecter::_op_submit_with_budget(Op *op,
 }
 
 int osd_cnt[12];
-int osd_tid_in[2000000000] = {-1};
-int osd_tid_out[2000000000] = {-1};
-std::recursive_mutex mtx;  
+int osd_tid_in[200000] = {-1};
+int osd_tid_out[200000] = {-1};
+std::mutex mtx;  
 
 void Objecter::inc_ops_etcd(Op *op){
   bool is_read = op->target.flags & CEPH_OSD_FLAG_READ;
@@ -2332,6 +2332,7 @@ void Objecter::inc_ops_etcd(Op *op){
   osd_cnt[op->target.osd] += 1;
   osd_tid_in[op->tid] = op->target.osd;
   mtx.unlock();
+
 
   std::string pol = cct->_conf.get_val<std::string>("rbd_read_from_replica_policy");
   ldout(cct, 15) << "policy " << pol << dendl;
@@ -2876,11 +2877,6 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
   bool is_read = t->flags & CEPH_OSD_FLAG_READ;
   bool is_write = t->flags & CEPH_OSD_FLAG_WRITE;
 
-  mtx.lock();
-  if(read_policy.length() == 0)
-    read_policy = cct->_conf.get_val<std::string>("rbd_read_from_replica_policy");
-  mtx.unlock();
-
   bool is_balanced = !(read_policy.compare("balance"));
   bool is_localized = !(read_policy.compare("localize"));
   is_balanced = false;
@@ -3153,8 +3149,10 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
             //osd = t->acting[best];
             t->used_replica = true;
           }
-          if(y)
+          if(y){
             t->osd = acting_primary;
+            t->used_replica = false;
+          }
         }
     }
   }
@@ -5179,6 +5177,8 @@ Objecter::Objecter(CephContext *cct,
 {
   mon_timeout = cct->_conf.get_val<std::chrono::seconds>("rados_mon_op_timeout");
   osd_timeout = cct->_conf.get_val<std::chrono::seconds>("rados_osd_op_timeout");
+  // kev
+  read_policy = cct->_conf.get_val<std::string>("rbd_read_from_replica_policy");
 }
 
 Objecter::~Objecter()
