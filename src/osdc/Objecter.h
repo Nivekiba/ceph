@@ -2454,6 +2454,8 @@ public:
   ceph::timespan mon_timeout;
   ceph::timespan osd_timeout;
 
+  int osd_cnt[12] = {0};
+
   MOSDOp *_prepare_osd_op(Op *op);
   void _send_op(Op *op);
   void _send_op_account(Op *op);

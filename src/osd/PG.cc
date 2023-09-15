@@ -2310,7 +2310,7 @@ bool PG::can_discard_op(OpRequestRef& op)
   }
 
   if ((m->get_flags() & (CEPH_OSD_FLAG_BALANCE_READS |
-			 CEPH_OSD_FLAG_LOCALIZE_READS) || true) &&
+			 CEPH_OSD_FLAG_LOCALIZE_READS) || true ) &&
       !is_primary() &&
       m->get_map_epoch() < info.history.same_interval_since) {
     // Note: the Objecter will resend on interval change without the primary

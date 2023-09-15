@@ -2315,9 +2315,9 @@ void Objecter::_op_submit_with_budget(Op *op,
   _op_submit(op, sul, ptid);
 }
 
-int osd_cnt[12];
-int osd_tid_in[200000] = {-1};
-int osd_tid_out[200000] = {-1};
+std::map<Objecter::Op*, int> osd_tid_in;
+std::map<Objecter::Op*, int> osd_tid_out;
+
 std::mutex mtx;  
 
 void Objecter::inc_ops_etcd(Op *op){
@@ -2330,14 +2330,13 @@ void Objecter::inc_ops_etcd(Op *op){
   // Kev
   mtx.lock();
   osd_cnt[op->target.osd] += 1;
-  osd_tid_in[op->tid] = op->target.osd;
+  osd_tid_in[op] = (int)op->target.osd;
+  osd_tid_out[op] = -1;
+  ldout(cct, 15) << __func__ << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
   mtx.unlock();
 
-
-  std::string pol = cct->_conf.get_val<std::string>("rbd_read_from_replica_policy");
-  ldout(cct, 15) << "policy " << pol << dendl;
-  ldout(cct, 15) << __func__ << " osd" << op->target.osd << dendl;
-  ldout(cct, 15) << op->tid << "->" << osd_tid_in[op->tid] << " " << osd_tid_out[op->tid] << dendl;
+  ldout(cct, 15) << __func__ << " osd" << op->target.osd << " " << op->ops.size() << " " << op->target.acting << dendl;
+  ldout(cct, 15) << op << "->" << osd_tid_in[op] << " " << osd_tid_out[op] << dendl;
   ldout(cct, 15) << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << dendl;
   return;
 
@@ -2373,12 +2372,13 @@ void Objecter::dec_ops_etcd(Op *op){
   // Kev
   mtx.lock();
   osd_cnt[op->target.osd] -= 1;
-  osd_tid_out[op->tid] = op->target.osd;
+  osd_tid_out[op] = (int)op->target.osd;
+  ldout(cct, 15) << __func__ << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
 //   osd_cnt[op->target.osd] = std::max(osd_cnt[op->target.osd], 0);
   mtx.unlock();
 
-  ldout(cct, 15) << __func__ << " osd" << op->target.osd << dendl;
-  ldout(cct, 15) << op->tid << "->" << osd_tid_in[op->tid] << " " << osd_tid_out[op->tid] << dendl;
+  ldout(cct, 15) << __func__ << " osd" << op->target.osd << " " << op->ops.size() << " " << op->target.acting << dendl;
+  ldout(cct, 15) << op << "->" << osd_tid_in[op] << " " << osd_tid_out[op] << dendl;
   ldout(cct, 15) << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << dendl;
   return;
 
@@ -3116,7 +3116,7 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
           << " data = " << response.value().as_string() << dendl;
         ldout(cct, 2) << (t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
                         CEPH_OSD_FLAG_LOCALIZE_READS)) <<dendl;*/
-        if (is_read) {
+        if (is_read || false) {
           int best = -1;
           int best_latency = 210000000;
           for (unsigned i = 0; i < t->acting.size(); ++i) {
@@ -5179,6 +5179,7 @@ Objecter::Objecter(CephContext *cct,
   osd_timeout = cct->_conf.get_val<std::chrono::seconds>("rados_osd_op_timeout");
   // kev
   read_policy = cct->_conf.get_val<std::string>("rbd_read_from_replica_policy");
+  osd_cnt[12] = {0};
 }
 
 Objecter::~Objecter()
