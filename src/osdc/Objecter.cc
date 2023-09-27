@@ -2332,7 +2332,8 @@ void Objecter::inc_ops_etcd(Op *op){
   osd_cnt[op->target.osd] += 1;
   osd_tid_in[op] = (int)op->target.osd;
   osd_tid_out[op] = -1;
-  ldout(cct, 15) << __func__ << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
+  ldout(cct, 15) << __func__ << "==> " << (int)(op->target.flags & CEPH_OSD_FLAG_ONDISK) << dendl;
+  ldout(cct, 15) << __func__ << " tid = " << op->tid << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
   mtx.unlock();
 
   ldout(cct, 15) << __func__ << " osd" << op->target.osd << " " << op->ops.size() << " " << op->target.acting << dendl;
@@ -2373,7 +2374,8 @@ void Objecter::dec_ops_etcd(Op *op){
   mtx.lock();
   osd_cnt[op->target.osd] -= 1;
   osd_tid_out[op] = (int)op->target.osd;
-  ldout(cct, 15) << __func__ << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
+  ldout(cct, 15) << __func__ << "==> " << (int)(op->target.flags & CEPH_OSD_FLAG_ONDISK) << dendl;
+  ldout(cct, 15) << __func__ << " tid = " << op->tid << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
 //   osd_cnt[op->target.osd] = std::max(osd_cnt[op->target.osd], 0);
   mtx.unlock();
 
@@ -3116,7 +3118,7 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
           << " data = " << response.value().as_string() << dendl;
         ldout(cct, 2) << (t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
                         CEPH_OSD_FLAG_LOCALIZE_READS)) <<dendl;*/
-        if (is_read || false) {
+        if (is_read) {
           int best = -1;
           int best_latency = 210000000;
           for (unsigned i = 0; i < t->acting.size(); ++i) {
@@ -3632,6 +3634,7 @@ void Objecter::handle_osd_op_reply(MOSDOpReply *m)
 
   if (rc == -EAGAIN) {
     ldout(cct, 7) << " got -EAGAIN, resubmitting" << dendl;
+    ldout(cct, 10) << " tid = " << op->tid << dendl;
     if (op->has_completion()){
       num_in_flight--;
       dec_ops_etcd(op);
@@ -5180,6 +5183,10 @@ Objecter::Objecter(CephContext *cct,
   // kev
   read_policy = cct->_conf.get_val<std::string>("rbd_read_from_replica_policy");
   osd_cnt[12] = {0};
+  int i;
+  for(i=0;i<12;i++){
+    osd_cnt[i] = 0;
+  }
 }
 
 Objecter::~Objecter()

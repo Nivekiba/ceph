@@ -1616,6 +1616,24 @@ OSDMapRef OSDService::try_get_map(epoch_t epoch)
 
 void OSDService::reply_op_error(OpRequestRef op, int err)
 {
+  if (err == -EAGAIN){
+    #include <execinfo.h>
+    void *array[3];
+    char **strings;
+    int size, i;
+
+    size = backtrace (array, 3);
+    strings = backtrace_symbols (array, size);
+    if (strings != NULL)
+    {
+      dout(20) << "Obtained " << size << " stack frames" << dendl;
+      for (i = 0; i < size; i++)
+        dout(20) << strings[i] << dendl;
+    }
+
+    free (strings);
+  }
+
   reply_op_error(op, err, eversion_t(), 0, {});
 }
 

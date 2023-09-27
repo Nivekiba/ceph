@@ -1798,6 +1798,11 @@ public:
     role = r;
   }
 
+  void set_pg_whoami(pg_shard_t pgw){
+    pg_whoami = pgw;
+  }
+  pg_shard_t get_pg_whoami() { return pg_whoami; }
+
   /// Std::set predicates used for determining readable and recoverable
   void set_backend_predicates(
     IsPGReadablePredicate *is_readable,

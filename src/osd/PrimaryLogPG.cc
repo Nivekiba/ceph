@@ -2040,6 +2040,8 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
       return;
     }
   }
+  pg_shard_t  g = pg_shard_t((recovery_state.get_up_primary()+2)%3);
+  //recovery_state.set_pg_whoami(g);
 
   if ( ((m->get_flags() & (CEPH_OSD_FLAG_BALANCE_READS |
 			 CEPH_OSD_FLAG_LOCALIZE_READS)) || true ) &&
