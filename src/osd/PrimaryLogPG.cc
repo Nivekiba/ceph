@@ -2040,11 +2040,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
       return;
     }
   }
-  pg_shard_t  g = pg_shard_t((recovery_state.get_up_primary()+2)%3);
-  //recovery_state.set_pg_whoami(g);
 
   if ( ((m->get_flags() & (CEPH_OSD_FLAG_BALANCE_READS |
-			 CEPH_OSD_FLAG_LOCALIZE_READS)) || true ) &&
+			 CEPH_OSD_FLAG_LOCALIZE_READS)) ) &&
       op->may_read() &&
       !(op->may_write() || op->may_cache())) {
     // balanced reads; any replica will do
@@ -2313,8 +2311,29 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
       dout(20) << __func__
                << ": unstable write on replica, bouncing to primary "
 	       << *m << dendl;
-      osd->reply_op_error(op, -EAGAIN);
-      return;
+         
+      // dout(20) << __func__ << " primaryi " << recovery_state.get_pg_whoami().get_osd()
+      //           << " read ?  " <<  op->may_read() << dendl;
+      // osd->reply_op_error(op, -EAGAIN);
+      // return;
+      // pg_shard_t g = pg_shard_t(1); // get shard of this and print it
+      // dout(20) << __func__ << " ? " << recovery_state.is_primary()
+      //          << " read ?  " <<  op->may_read()
+      //          << " actingbef " << recovery_state.get_acting() << dendl;
+      // recovery_state.set_pg_whoami(recovery_state.get_pg_whoami());
+      // pg_shard_t g = recovery_state.get_pg_whoami();
+      // pg_shard_t pp = recovery_state.get_primary();
+      
+      // dout(20) << __func__ << " spg" << m->get_spg().shard << " " << g << dendl;
+      // dout(20) << __func__ << "selfpg" << recovery_state.get_pg_whoami() << dendl;
+      // dout(20) << __func__ << " ? " << recovery_state.is_primary()
+      //          << " read ?  " <<  op->may_read()
+      //          << " actingbef " << recovery_state.get_acting() << dendl;
+
+      if (!recovery_state.can_serve_replica_read(oid)) {
+          osd->reply_op_error(op, -EAGAIN);
+          return;
+      }
     }
     dout(20) << __func__ << ": serving replica read on oid " << oid
              << dendl;

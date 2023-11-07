@@ -2332,8 +2332,8 @@ void Objecter::inc_ops_etcd(Op *op){
   osd_cnt[op->target.osd] += 1;
   osd_tid_in[op] = (int)op->target.osd;
   osd_tid_out[op] = -1;
-  ldout(cct, 15) << __func__ << "==> " << (int)(op->target.flags & CEPH_OSD_FLAG_ONDISK) << dendl;
-  ldout(cct, 15) << __func__ << " tid = " << op->tid << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
+  ldout(cct, 15) << __func__ << "==> " << (int)(op->target.flags & CEPH_OSD_FLAG_READ) << dendl;
+  //ldout(cct, 15) << __func__ << " tid = " << op->tid << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
   mtx.unlock();
 
   ldout(cct, 15) << __func__ << " osd" << op->target.osd << " " << op->ops.size() << " " << op->target.acting << dendl;
@@ -2374,8 +2374,8 @@ void Objecter::dec_ops_etcd(Op *op){
   mtx.lock();
   osd_cnt[op->target.osd] -= 1;
   osd_tid_out[op] = (int)op->target.osd;
-  ldout(cct, 15) << __func__ << "==> " << (int)(op->target.flags & CEPH_OSD_FLAG_ONDISK) << dendl;
-  ldout(cct, 15) << __func__ << " tid = " << op->tid << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
+  ldout(cct, 15) << __func__ << "==> " << (int)(op->target.flags & CEPH_OSD_FLAG_READ) << dendl;
+  //ldout(cct, 15) << __func__ << " tid = " << op->tid << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
 //   osd_cnt[op->target.osd] = std::max(osd_cnt[op->target.osd], 0);
   mtx.unlock();
 
@@ -3063,20 +3063,39 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
 		   << " primary " << acting_primary << dendl;
     t->used_replica = false;
                   
-    // if ((t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
-    //                  CEPH_OSD_FLAG_LOCALIZE_READS)) &&
-    if ((is_balanced || is_localized) && !(t->flags & 0x10000000) &&
+    if ((t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
+                     CEPH_OSD_FLAG_LOCALIZE_READS)) &&
+    // if ((is_balanced || is_localized) && !(t->flags & 0x10000000) &&
         !is_write && pi->is_replicated() && t->acting.size() > 1) {
       int osd;
       ceph_assert(is_read && t->acting[0] == acting_primary);
-      // if (t->flags & CEPH_OSD_FLAG_BALANCE_READS) {
-      if (is_balanced) {
+      if (t->flags & CEPH_OSD_FLAG_BALANCE_READS) {
+      // if (is_balanced) {
 	int p = rand() % t->acting.size();
 	if (p)
 	  t->used_replica = true;
 	osd = t->acting[p];
 	ldout(cct, 10) << " chose random osd." << osd << " of " << t->acting
 		       << dendl;
+           // ================ start latency checker ============//
+           int best = -1;
+          int best_latency = 210000000;
+          for (unsigned i = 0; i < t->acting.size(); ++i) {
+            int v = osd_cnt[t->acting[i]];
+            ldout(cct, 15) << __func__ << " v = " << v << " best = " << best  << dendl;
+            ldout(cct, 15) << __func__ << " best_lat = " << best_latency << dendl;
+            if (v < best_latency && v >= 0 && best_latency >= 0){
+              best_latency = v;
+              best = i;
+              ldout(cct, 15) << __func__ << v << best_latency << dendl;
+            }
+          }
+          ldout(cct, 20) << __func__ << " in the heap " << best << dendl;
+          if (best >= 0){
+            t->osd = t->acting[best];
+            t->used_replica = true;
+          }
+          // ======================= end latency checker ================= //
       } else {
 	// look for a local replica.  prefer the primary if the
 	// distance is the same.
@@ -3118,7 +3137,7 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
           << " data = " << response.value().as_string() << dendl;
         ldout(cct, 2) << (t->flags & (CEPH_OSD_FLAG_BALANCE_READS |
                         CEPH_OSD_FLAG_LOCALIZE_READS)) <<dendl;*/
-        if (is_read) {
+        if (false && is_read) {
           int best = -1;
           int best_latency = 210000000;
           for (unsigned i = 0; i < t->acting.size(); ++i) {
@@ -3147,13 +3166,11 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
           }
           ldout(cct, 20) << __func__ << " in the heap " << best << dendl;
           if (best >= 0){
+            ldout(cct, 20) << __func__ << " couf 1" << t->up << t->acting << best<<y<< dendl;  
+            
             t->osd = t->acting[best];
             //osd = t->acting[best];
             t->used_replica = true;
-          }
-          if(y){
-            t->osd = acting_primary;
-            t->used_replica = false;
           }
         }
     }
