@@ -60,6 +60,7 @@
 
 // Kev
 #include "etcd/SyncClient.hpp"
+etcd::SyncClient *eclient;
 
 
 using std::list;
@@ -2341,20 +2342,48 @@ void Objecter::inc_ops_etcd(Op *op){
   ldout(cct, 15) << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << dendl;
   return;
 
-  etcd::SyncClient etcd("http://127.0.0.1:2379");
+  // etcd::SyncClient eclient("http://127.0.0.1:2379");
+
+  //return;
+  std::thread thread_object([&](int osd){
+    std::string key = "osd."+std::to_string(osd);
+    ldout(cct, 15) << __func__ << " before " << dendl;
+    etcd::Response response = eclient->get(key);
+    ldout(cct, 15) << __func__ << " after " << dendl;
+    //return;
+
+    std::string last_num;
+    if(response.is_ok()){
+      // Exists and we get it
+      last_num = response.value().as_string();
+      etcd::Response r1 = eclient->put(
+                        key,
+                        std::to_string(stoi(last_num)+1) );
+      //ldout(cct, 15) << __func__ << " etcd send" << key << " " << num_in_flight << dendl;
+    } else { // key not found
+      etcd::Response r1 = eclient->put(
+                        key,
+                        "1" );
+      //ldout(cct, 15) << __func__ << " etcd send " << key << " " << num_in_flight << dendl;
+    }
+  }, op->target.osd);
+  thread_object.detach();
+
+  return;
+  
   std::string key = "osd."+std::to_string(op->target.osd);
-  etcd::Response response = etcd.get(key);
+  etcd::Response response = eclient->get(key);
 
   std::string last_num;
   if(response.is_ok()){
     // Exists and we get it
     last_num = response.value().as_string();
-    etcd::Response r1 = etcd.put(
+    etcd::Response r1 = eclient->put(
                       key,
                       std::to_string(stoi(last_num)+1) );
     ldout(cct, 15) << __func__ << " etcd send" << key << " " << num_in_flight << dendl;
   } else { // key not found
-    etcd::Response r1 = etcd.put(
+    etcd::Response r1 = eclient->put(
                       key,
                       "1" );
     ldout(cct, 15) << __func__ << " etcd send " << key << " " << num_in_flight << dendl;
@@ -2384,22 +2413,50 @@ void Objecter::dec_ops_etcd(Op *op){
   ldout(cct, 15) << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << dendl;
   return;
 
-  etcd::SyncClient etcd("http://127.0.0.1:2379");
+  std::thread thread_object([&](int osd){
+    std::string key = "osd."+std::to_string(osd);
+    ldout(cct, 15) << __func__ << " before " << dendl;
+    etcd::Response response = eclient->get(key);
+    ldout(cct, 15) << __func__ << " after " << dendl;
+    //return;
+
+    std::string last_num;
+    if(response.is_ok()){
+      // Exists and we get it
+      last_num = response.value().as_string();
+      int num = std::max(0, stoi(last_num) - 1);
+      etcd::Response r1 = eclient->put(
+                        key,
+                        std::to_string(num) );
+      //ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
+    } else {
+      // key not found
+      etcd::Response r1 = eclient->put(
+                        key,
+                        "0" );
+      //ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
+    }
+  }, op->target.osd);
+  thread_object.detach();
+
+  return;
+
+  // etcd::SyncClient eclient("http://127.0.0.1:2379");
   std::string key = "osd."+std::to_string(op->target.osd);
-  etcd::Response response = etcd.get(key);
+  etcd::Response response = eclient->get(key);
   
   std::string last_num;
   if(response.is_ok()){
     // Exists and we get it
     last_num = response.value().as_string();
     int num = std::max(0, stoi(last_num) - 1);
-    etcd::Response r1 = etcd.put(
+    etcd::Response r1 = eclient->put(
                       key,
                       std::to_string(num) );
     ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
   } else {
     // key not found
-    etcd::Response r1 = etcd.put(
+    etcd::Response r1 = eclient->put(
                       key,
                       "0" );
     ldout(cct, 15) << __func__ << " ---------etcd finish " << key << dendl;
@@ -2879,9 +2936,9 @@ int Objecter::_calc_target(op_target_t *t, Connection *con, bool any_change)
   bool is_read = t->flags & CEPH_OSD_FLAG_READ;
   bool is_write = t->flags & CEPH_OSD_FLAG_WRITE;
 
-  bool is_balanced = !(read_policy.compare("balance"));
-  bool is_localized = !(read_policy.compare("localize"));
-  is_balanced = false;
+  bool is_balanced = t->flags & CEPH_OSD_FLAG_BALANCE_READS;//!(read_policy.compare("balance"));
+  bool is_localized = t->flags & CEPH_OSD_FLAG_LOCALIZE_READS;// !(read_policy.compare("localize"));
+  //is_balanced = false;
   
   ldout(cct, 20) << "pol " << read_policy << " " << is_balanced << " " << is_localized << dendl;
   
@@ -5204,6 +5261,7 @@ Objecter::Objecter(CephContext *cct,
   for(i=0;i<12;i++){
     osd_cnt[i] = 0;
   }
+  eclient = new etcd::SyncClient("http://127.0.0.1:2379");
 }
 
 Objecter::~Objecter()
@@ -5224,6 +5282,7 @@ Objecter::~Objecter()
 
   ceph_assert(!m_request_state_hook);
   ceph_assert(!logger);
+  delete eclient;
 }
 
 /**
