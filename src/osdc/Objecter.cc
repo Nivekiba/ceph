@@ -60,7 +60,10 @@
 
 // Kev
 #include "etcd/SyncClient.hpp"
+#include "etcd/Watcher.hpp"
+#include <regex>
 etcd::SyncClient *eclient;
+etcd::Watcher *watcher;
 
 
 using std::list;
@@ -185,6 +188,20 @@ enum {
 
   l_osdc_last,
 };
+
+// Kev
+vector<string> split(string str,   char* delimiter)
+{
+    vector<string> v;
+     char *token = strtok(const_cast<char*>(str.c_str()), delimiter);
+    while (token != nullptr)
+    {
+        v.push_back(string(token));
+        token = strtok(nullptr, delimiter);
+    }
+   
+  return v;
+}
 
 namespace {
 inline bs::error_code osdcode(int r) {
@@ -5261,7 +5278,50 @@ Objecter::Objecter(CephContext *cct,
   for(i=0;i<12;i++){
     osd_cnt[i] = 0;
   }
-  eclient = new etcd::SyncClient("http://127.0.0.1:2379");
+  
+  watcher = new etcd::Watcher("http://127.0.0.1:2379", "osd", [=,this](etcd::Response resp){
+    // std::cout<<"curr " << resp.events()[0].kv().key() << " " << resp.value().as_string() <<std::endl;
+    ldout(cct, 10) << __func__ << "watch is ok ? " << resp.is_ok() <<dendl;
+    
+    ldout(cct, 10) << __func__ << "watchid " << resp.events()[0].kv().key() << " " << resp.value().as_string() <<dendl;
+    string pv = resp.prev_value().as_string();
+    string nv = resp.value().as_string();
+    string key = resp.events()[0].kv().key();
+
+    pv.erase(std::remove_if(pv.begin(), 
+                              pv.end(),
+                              [](unsigned char x) { return std::isspace(x); }),
+                            pv.end());
+    nv.erase(std::remove_if(nv.begin(), 
+                              nv.end(),
+                              [](unsigned char x) { return std::isspace(x); }),
+                            nv.end());
+    if(nv.compare(pv)==0){
+      ldout(cct, 10) << __func__ << "watch but not changed value" << dendl;
+      return;
+    }
+    nv.erase(0, 1);
+    nv.pop_back();
+    //value.erase(remove(value.begin(), r.end(), '['), r.end());
+    //value.erase(remove(value.begin(), r.end(), ']'), r.end());
+    vector<string> res = split(nv, (char*)",");
+    int i =1;
+    for (auto r : res){
+      ldout(cct, 10) << __func__ << " " << r << dendl;
+      i++;
+    }
+    std::regex regexp("\\d+");
+    std::smatch ma;
+    std::regex_search(key, ma, regexp);
+    /* do stuff for osd_cnt */
+    // Kev
+    if(ma.size()>0){
+      // int node_id = stoi(m[0]);
+      // mtx.lock();
+      // //osd_cnt[op->target.osd] += 1;
+      // mtx.unlock();
+    }
+  }, true);
 }
 
 Objecter::~Objecter()
@@ -5282,7 +5342,9 @@ Objecter::~Objecter()
 
   ceph_assert(!m_request_state_hook);
   ceph_assert(!logger);
-  delete eclient;
+  // watcher->Cancel();
+  // delete watcher;
+  // delete eclient;
 }
 
 /**
