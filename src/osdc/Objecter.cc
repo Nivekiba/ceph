@@ -2345,14 +2345,15 @@ void Objecter::inc_ops_etcd(Op *op){
   } else {
     return;
   }
+  
   // Kev
-  mtx.lock();
-  osd_cnt[op->target.osd] += 1;
-  osd_tid_in[op] = (int)op->target.osd;
-  osd_tid_out[op] = -1;
-  ldout(cct, 15) << __func__ << "==> " << (int)(op->target.flags & CEPH_OSD_FLAG_READ) << dendl;
-  //ldout(cct, 15) << __func__ << " tid = " << op->tid << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
-  mtx.unlock();
+  // mtx.lock();
+  // osd_cnt[op->target.osd] += 1;
+  // osd_tid_in[op] = (int)op->target.osd;
+  // osd_tid_out[op] = -1;
+  // ldout(cct, 15) << __func__ << "==> " << (int)(op->target.flags & CEPH_OSD_FLAG_READ) << dendl;
+  // //ldout(cct, 15) << __func__ << " tid = " << op->tid << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
+  // mtx.unlock();
 
   ldout(cct, 15) << __func__ << " osd" << op->target.osd << " " << op->ops.size() << " " << op->target.acting << dendl;
   ldout(cct, 15) << op << "->" << osd_tid_in[op] << " " << osd_tid_out[op] << dendl;
@@ -2416,14 +2417,15 @@ void Objecter::dec_ops_etcd(Op *op){
   } else {
     return;
   }
+  
   // Kev
-  mtx.lock();
-  osd_cnt[op->target.osd] -= 1;
-  osd_tid_out[op] = (int)op->target.osd;
-  ldout(cct, 15) << __func__ << "==> " << (int)(op->target.flags & CEPH_OSD_FLAG_READ) << dendl;
-  //ldout(cct, 15) << __func__ << " tid = " << op->tid << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
-//   osd_cnt[op->target.osd] = std::max(osd_cnt[op->target.osd], 0);
-  mtx.unlock();
+//   mtx.lock();
+//   osd_cnt[op->target.osd] -= 1;
+//   osd_tid_out[op] = (int)op->target.osd;
+//   ldout(cct, 15) << __func__ << "==> " << (int)(op->target.flags & CEPH_OSD_FLAG_READ) << dendl;
+//   //ldout(cct, 15) << __func__ << " tid = " << op->tid << " " << osd_cnt[0] << " " << osd_cnt[1] << " " << osd_cnt[2] << " " << osd_cnt[3] << " " << osd_cnt[4] << " " << osd_cnt << " " << getpid() << dendl;
+// //   osd_cnt[op->target.osd] = std::max(osd_cnt[op->target.osd], 0);
+//   mtx.unlock();
 
   ldout(cct, 15) << __func__ << " osd" << op->target.osd << " " << op->ops.size() << " " << op->target.acting << dendl;
   ldout(cct, 15) << op << "->" << osd_tid_in[op] << " " << osd_tid_out[op] << dendl;
@@ -5316,10 +5318,13 @@ Objecter::Objecter(CephContext *cct,
     /* do stuff for osd_cnt */
     // Kev
     if(ma.size()>0){
-      // int node_id = stoi(m[0]);
-      // mtx.lock();
-      // //osd_cnt[op->target.osd] += 1;
-      // mtx.unlock();
+      int node_id = std::stoi(ma[0]);
+      mtx.lock();
+      for (auto r : res){
+        //ldout(cct, 10) << __func__ << " " << r << dendl;
+        osd_cnt[node_id] = (int)(std::stof(r)*10);
+      }
+      mtx.unlock();
     }
   }, true);
 }
