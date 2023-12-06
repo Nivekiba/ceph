@@ -5281,7 +5281,7 @@ Objecter::Objecter(CephContext *cct,
     osd_cnt[i] = 0;
   }
   
-  watcher = new etcd::Watcher("http://127.0.0.1:2379", "osd", [=,this](etcd::Response resp){
+  watcher = new etcd::Watcher("http://127.0.0.1:2379,http://node0:2379,http://node10:2379,http://node11:2379", "osd", [=,this](etcd::Response resp){
     // std::cout<<"curr " << resp.events()[0].kv().key() << " " << resp.value().as_string() <<std::endl;
     ldout(cct, 10) << __func__ << "watch is ok ? " << resp.is_ok() <<dendl;
     
