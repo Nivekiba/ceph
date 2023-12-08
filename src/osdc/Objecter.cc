@@ -5281,52 +5281,52 @@ Objecter::Objecter(CephContext *cct,
     osd_cnt[i] = 0;
   }
   
-  watcher = new etcd::Watcher("http://127.0.0.1:2379,http://node0:2379,http://node10:2379,http://node11:2379", "osd", [=,this](etcd::Response resp){
-    // std::cout<<"curr " << resp.events()[0].kv().key() << " " << resp.value().as_string() <<std::endl;
-    ldout(cct, 10) << __func__ << "watch is ok ? " << resp.is_ok() <<dendl;
+  // watcher = new etcd::Watcher("http://127.0.0.1:2379,http://node0:2379,http://node10:2379,http://node11:2379", "osd", [=,this](etcd::Response resp){
+  //   // std::cout<<"curr " << resp.events()[0].kv().key() << " " << resp.value().as_string() <<std::endl;
+  //   ldout(cct, 10) << __func__ << "watch is ok ? " << resp.is_ok() <<dendl;
     
-    ldout(cct, 10) << __func__ << "watchid " << resp.events()[0].kv().key() << " " << resp.value().as_string() <<dendl;
-    string pv = resp.prev_value().as_string();
-    string nv = resp.value().as_string();
-    string key = resp.events()[0].kv().key();
+  //   ldout(cct, 10) << __func__ << "watchid " << resp.events()[0].kv().key() << " " << resp.value().as_string() <<dendl;
+  //   string pv = resp.prev_value().as_string();
+  //   string nv = resp.value().as_string();
+  //   string key = resp.events()[0].kv().key();
 
-    pv.erase(std::remove_if(pv.begin(), 
-                              pv.end(),
-                              [](unsigned char x) { return std::isspace(x); }),
-                            pv.end());
-    nv.erase(std::remove_if(nv.begin(), 
-                              nv.end(),
-                              [](unsigned char x) { return std::isspace(x); }),
-                            nv.end());
-    if(nv.compare(pv)==0){
-      ldout(cct, 10) << __func__ << "watch but not changed value" << dendl;
-      return;
-    }
-    nv.erase(0, 1);
-    nv.pop_back();
-    //value.erase(remove(value.begin(), r.end(), '['), r.end());
-    //value.erase(remove(value.begin(), r.end(), ']'), r.end());
-    vector<string> res = split(nv, (char*)",");
-    int i =1;
-    for (auto r : res){
-      ldout(cct, 10) << __func__ << " " << r << dendl;
-      i++;
-    }
-    std::regex regexp("\\d+");
-    std::smatch ma;
-    std::regex_search(key, ma, regexp);
-    /* do stuff for osd_cnt */
-    // Kev
-    if(ma.size()>0){
-      int node_id = std::stoi(ma[0]);
-      mtx.lock();
-      for (auto r : res){
-        //ldout(cct, 10) << __func__ << " " << r << dendl;
-        osd_cnt[node_id] = (int)(std::stof(r)*10);
-      }
-      mtx.unlock();
-    }
-  }, true);
+  //   pv.erase(std::remove_if(pv.begin(), 
+  //                             pv.end(),
+  //                             [](unsigned char x) { return std::isspace(x); }),
+  //                           pv.end());
+  //   nv.erase(std::remove_if(nv.begin(), 
+  //                             nv.end(),
+  //                             [](unsigned char x) { return std::isspace(x); }),
+  //                           nv.end());
+  //   if(nv.compare(pv)==0){
+  //     ldout(cct, 10) << __func__ << "watch but not changed value" << dendl;
+  //     return;
+  //   }
+  //   nv.erase(0, 1);
+  //   nv.pop_back();
+  //   //value.erase(remove(value.begin(), r.end(), '['), r.end());
+  //   //value.erase(remove(value.begin(), r.end(), ']'), r.end());
+  //   vector<string> res = split(nv, (char*)",");
+  //   int i =1;
+  //   for (auto r : res){
+  //     ldout(cct, 10) << __func__ << " " << r << dendl;
+  //     i++;
+  //   }
+  //   std::regex regexp("\\d+");
+  //   std::smatch ma;
+  //   std::regex_search(key, ma, regexp);
+  //   /* do stuff for osd_cnt */
+  //   // Kev
+  //   if(ma.size()>0){
+  //     int node_id = std::stoi(ma[0]);
+  //     mtx.lock();
+  //     for (auto r : res){
+  //       //ldout(cct, 10) << __func__ << " " << r << dendl;
+  //       osd_cnt[node_id] = (int)(std::stof(r)*10);
+  //     }
+  //     mtx.unlock();
+  //   }
+  // }, true);
 }
 
 Objecter::~Objecter()
