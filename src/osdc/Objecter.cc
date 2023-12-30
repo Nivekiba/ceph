@@ -5290,6 +5290,9 @@ Objecter::Objecter(CephContext *cct,
     string nv = resp.value().as_string();
     string key = resp.events()[0].kv().key();
 
+    char hostname[HOST_NAME_MAX+1];
+    gethostname(hostname, HOST_NAME_MAX+1);
+
     pv.erase(std::remove_if(pv.begin(), 
                               pv.end(),
                               [](unsigned char x) { return std::isspace(x); }),
@@ -5302,6 +5305,13 @@ Objecter::Objecter(CephContext *cct,
       ldout(cct, 10) << __func__ << "watch but not changed value" << dendl;
       return;
     }
+
+    // check if the current objecter client host is concerned by the key modified
+    if(key.compare(hostname) != 0) {
+      ldout(cct, 10) << __func__ << "watch but not equivalent server" << dendl;
+      return;
+    }
+
     nv.erase(0, 1);
     nv.pop_back();
     //value.erase(remove(value.begin(), r.end(), '['), r.end());
@@ -5320,9 +5330,11 @@ Objecter::Objecter(CephContext *cct,
     if(ma.size()>0){
       int node_id = std::stoi(ma[0]);
       mtx.lock();
+      i = 0;
       for (auto r : res){
         //ldout(cct, 10) << __func__ << " " << r << dendl;
-        osd_cnt[node_id] = (int)(std::stof(r)*10);
+        osd_cnt[i] = (int)(std::stof(r)*10);
+        i++;
       }
       mtx.unlock();
     }
