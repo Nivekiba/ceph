@@ -5284,14 +5284,15 @@ Objecter::Objecter(CephContext *cct,
   watcher = new etcd::Watcher("http://127.0.0.1:2379,http://node0:2379,http://node10:2379,http://node11:2379", "node", [=,this](etcd::Response resp){
     // std::cout<<"curr " << resp.events()[0].kv().key() << " " << resp.value().as_string() <<std::endl;
     ldout(cct, 10) << __func__ << "watch is ok ? " << resp.is_ok() <<dendl;
+
+    char hostname[HOST_NAME_MAX+1];
+    gethostname(hostname, HOST_NAME_MAX+1);
     
-    ldout(cct, 10) << __func__ << "watchid " << resp.events()[0].kv().key() << " " << resp.value().as_string() <<dendl;
+    ldout(cct, 10) << __func__ << "watchid " << resp.events()[0].kv().key() << " " << resp.value().as_string() << " on " << hostname << dendl;
     string pv = resp.prev_value().as_string();
     string nv = resp.value().as_string();
     string key = resp.events()[0].kv().key();
 
-    char hostname[HOST_NAME_MAX+1];
-    gethostname(hostname, HOST_NAME_MAX+1);
 
     pv.erase(std::remove_if(pv.begin(), 
                               pv.end(),
@@ -5330,7 +5331,7 @@ Objecter::Objecter(CephContext *cct,
     if(ma.size()>0){
       int node_id = std::stoi(ma[0]);
       mtx.lock();
-      i = 0;
+      i = 2;
       for (auto r : res){
         //ldout(cct, 10) << __func__ << " " << r << dendl;
         osd_cnt[i] = (int)(std::stof(r)*10);
